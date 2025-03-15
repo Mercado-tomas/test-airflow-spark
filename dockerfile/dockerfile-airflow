@@ -1,0 +1,11 @@
+
+## dockerfile airflow y spark
+FROM apache/airflow:2.9.0
+# Cambiar a root para instalar paquetes
+USER root
+RUN apt-get update && apt-get install -y bash procps openjdk-17-jdk docker.io
+# configurar java_home
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+# usuario airflow para instalar dependencias 
+USER airflow
+RUN pip install --no-cache-dir pyspark==3.5.0 pandas 

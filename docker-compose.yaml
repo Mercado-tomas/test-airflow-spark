@@ -1,0 +1,101 @@
+## compose para levantar airflow y spark
+## primero, hacer los build de los dockerfile
+version: '3'
+services:
+  postgres:
+    ## db necesaria para airflow
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    ## servicio temporal para iniciar la db antes del webserver
+  airflow-init:
+    build: 
+      context: .
+      dockerfile: dockerfile/dockerfile-airflow
+    entrypoint: /bin/bash
+    ## inicializamos y creamos un usuario nuevo
+    ## este usuario podra ingresar en la ui de airflow
+    command: -c "airflow db init && airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin " ## comando a iniciar la db 
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    volumes:
+      - ./logs:/opt/airflow/logs # ver logs del init
+    depends_on:
+      - postgres
+  airflow-webserver:
+    build:
+      context: . ##raiz de proyecto
+      dockerfile: dockerfile/dockerfile-airflow
+    command: webserver
+    env_file:
+      - .env
+    ports:
+      - "8090:8080"    
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - ./logs:/opt/airflow/logs
+      #montamos el socket de docker, para ejectuar docker exec, dentro del contenedor de airflow
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      # asegurar que spark y java estén en el path
+      #- PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH
+      #- JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor 
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow     
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    build: 
+      context: .
+      dockerfile: dockerfile/dockerfile-airflow
+    command: scheduler
+    env_file:
+      - .env
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - ./logs:/opt/airflow/logs
+      #montamos el socket de docker, para ejectuar docker exec, dentro del contenedor de airflow
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+    # asegurar que spark y java estén en el path
+      #- PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH
+      #- JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    depends_on:
+      - airflow-webserver
+
+  spark:
+    build: 
+      context: .
+      dockerfile: dockerfile/dockerfile-pyspark
+    #nombre fijo del contenedor, para llamarlo desde dentro
+    # del dag
+    container_name: spark_container
+    volumes:
+      - ./data:/data
+    ports:
+      - "4040:4040"
+    environment:
+      #configurar java_home en el contenedor de spark
+      - JAVA_HOME=/opt/bitnami/java
+      - SPARK_HOME=/opt/bitnami/spark
+
+volumes:
+  postgres_data:
+
+
+
+
+
+
